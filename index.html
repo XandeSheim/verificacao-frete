@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Verificação de Frete</title>
+  <meta name="description" content="Descobre quais CEPs de uma região não têm frete nas planilhas de referência.">
+  <link rel="icon" href="assets/favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="icon" href="favicon.ico" sizes="any">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <link rel="stylesheet" href="styles.css?v=2026.11.17b">
+</head>
+<body>
+  <header class="topbar glass">
+    <div class="brand">
+      <h1 class="wordmark"><img src="assets/logo-mapa.png" alt="" width="222" height="208"><span>Verificação de Frete</span></h1>
+      <p>Mostra quais CEPs da região não têm frete nas planilhas de referência</p>
+    </div>
+    <div class="theme">
+      <span id="theme-label">Tema</span>
+      <div id="theme" class="dropdown">
+        <button id="theme-btn" class="dropdown-btn" type="button" aria-haspopup="listbox" aria-expanded="false"
+          aria-labelledby="theme-label theme-btn">
+          <span id="theme-value">Sistema</span>
+          <svg class="chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+        </button>
+        <ul id="theme-menu" class="dropdown-menu" role="listbox" aria-labelledby="theme-label" tabindex="-1">
+          <li role="option" data-value="system">Sistema</li>
+          <li role="option" data-value="light">Claro</li>
+          <li role="option" data-value="dark">Escuro</li>
+        </ul>
+      </div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section id="freight-card" class="card freight" aria-labelledby="t-freight">
+      <div class="card-head">
+        <h2 id="t-freight"><span class="step">1</span> Planilhas de frete de referência</h2>
+      </div>
+      <label id="drop" class="drop">
+        <input id="freight-input" type="file" accept=".xls,.xlsx,.csv" multiple hidden>
+        <svg class="drop-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>
+        </svg>
+        <strong>Arraste as planilhas aqui</strong>
+        <span>ou clique para escolher (.xls, .xlsx ou .csv)</span>
+      </label>
+      <ol id="freight-list" class="file-list"></ol>
+      <button id="freight-clear" class="btn subtle" type="button" hidden>Limpar lista</button>
+    </section>
+
+    <div class="stack">
+      <section class="card region" aria-labelledby="t-range">
+        <h2 id="t-range"><span class="step">2</span> Região (.geojson)</h2>
+        <div class="file-row">
+          <label class="btn">
+            <input id="geo-input" type="file" accept=".geojson,.json" hidden>Escolher arquivo
+          </label>
+          <span id="geo-name" class="muted">Nenhum arquivo</span>
+        </div>
+        <svg id="geo-preview" class="preview" viewBox="0 0 100 60" hidden aria-label="Prévia do polígono"></svg>
+        <p class="hint">Desenhe a região em <a href="https://geojson.io" target="_blank" rel="noopener">geojson.io</a> e salve como .geojson.</p>
+      </section>
+
+      <details class="card advanced">
+        <summary>Avançado</summary>
+        <h3>Base de CEPs própria (.csv)</h3>
+        <div class="file-row">
+          <label class="btn">
+            <input id="cep-input" type="file" accept=".csv,.txt" hidden>Escolher arquivo
+          </label>
+          <span id="cep-name" class="muted">Automática (IBGE, Censo 2022)</span>
+          <button id="cep-clear" class="btn subtle" type="button" hidden>Remover</button>
+        </div>
+        <p class="hint">Colunas <code>cep, latitude, longitude</code> e, se tiver, <code>bairro, cidade, logradouro</code>.</p>
+        <h3>Mapeamento de colunas (config.json)</h3>
+        <div class="file-row">
+          <label class="btn">
+            <input id="cfg-input" type="file" accept=".json" hidden>Escolher arquivo
+          </label>
+          <span id="cfg-name" class="muted">Não usar (colunas VTEX reconhecidas sozinhas)</span>
+          <button id="cfg-clear" class="btn subtle" type="button" hidden>Remover</button>
+        </div>
+        <p class="hint">Ex.: <code>{"cep_inicio": "De", "cep_fim": "Ate", "peso_fim": "PesoMax"}</code></p>
+        <h3>CEPs salvos no navegador</h3>
+        <div class="file-row">
+          <button id="cache-clear" class="btn" type="button">Apagar CEPs salvos</button>
+          <span class="muted">Força baixar de novo do IBGE.</span>
+        </div>
+      </details>
+    </div>
+
+    <section class="card wide" aria-labelledby="t-run">
+      <div class="run-row">
+        <button id="run" class="btn primary" type="button" disabled>Verificar cobertura</button>
+        <div class="progress-wrap">
+          <div class="progress"><div id="bar"></div></div>
+          <p id="status" class="muted" role="status">Escolha as planilhas e a região.</p>
+        </div>
+      </div>
+      <details class="log-box">
+        <summary>Log</summary>
+        <pre id="log" aria-live="polite"></pre>
+      </details>
+    </section>
+
+    <section id="report" class="card wide report" aria-labelledby="t-report" hidden>
+      <div class="result-head">
+        <div>
+          <h2 id="t-report">Resultado</h2>
+          <p id="report-summary" class="muted"></p>
+        </div>
+        <div class="downloads">
+          <a id="dl-xlsx" class="btn primary" download>Baixar planilha (.xlsx)</a>
+          <a id="dl-geo" class="btn" download>CEPs sem cobertura (.geojson)</a>
+        </div>
+      </div>
+
+      <div id="kpis" class="kpis"></div>
+      <div class="coverage-bar" id="coverage-bar" aria-hidden="true"></div>
+
+      <div class="report-grid">
+        <div class="map-wrap">
+          <div id="map" role="img" aria-label="Mapa dos CEPs da região por status de cobertura"></div>
+          <div class="map-legend" id="map-legend"></div>
+          <p id="map-note" class="hint" hidden></p>
+        </div>
+        <div class="ranking">
+          <div class="seg" role="tablist">
+            <button type="button" role="tab" class="on" data-group="bairro" aria-selected="true">Por bairro</button>
+            <button type="button" role="tab" data-group="cidade" aria-selected="false">Por cidade</button>
+          </div>
+          <ol id="rank-list" class="rank-list"></ol>
+        </div>
+      </div>
+
+      <div class="table-head">
+        <h3>CEPs sem cobertura</h3>
+        <input id="filter" class="search" type="search" placeholder="Filtrar por CEP, bairro, rua...">
+      </div>
+      <div class="table-wrap scroll">
+        <table>
+          <thead><tr><th>CEP</th><th>Logradouro</th><th>Localidade/Bairro</th><th>Cidade</th><th class="num">Endereços</th></tr></thead>
+          <tbody id="sem-body"></tbody>
+        </table>
+      </div>
+      <p id="table-note" class="hint"></p>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <p>
+      Suas planilhas são processadas no seu navegador e não são enviadas para nenhum servidor.
+      Só os endereços públicos do IBGE e o mapa de fundo são baixados.
+    </p>
+    <div class="signature">
+      <span>Desenvolvido por</span>
+      <img src="assets/avanti.png" alt="Avanti, uma empresa FCamara" width="105" height="26">
+    </div>
+  </footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <!-- Ao mudar CSS/JS, troque o ?v= para os navegadores pegarem a versão nova na hora -->
+  <script src="js/coverage.js?v=2026.11.17b"></script>
+  <script src="js/ibge.js?v=2026.11.17b"></script>
+  <script src="js/app.js?v=2026.11.17b"></script>
+</body>
+</html>
